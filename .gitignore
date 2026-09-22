@@ -22,6 +22,12 @@ salida/
 salidas/
 *.log
 
+# Meta del PR, no va al repo
+docs/PR_BODY.md
+
+# Descargas del chat
+Claude outputs/
+
 # Editores / SO
 .vscode/
 .idea/

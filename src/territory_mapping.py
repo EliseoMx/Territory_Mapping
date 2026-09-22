@@ -348,12 +348,208 @@ def perimeter_meters(points):
     return total
 
 
+def _orient(a, b, c):
+    v = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    if abs(v) < 1e-14:
+        return 0
+    return 1 if v > 0 else -1
+
+
+def _on_segment(a, b, c):
+    """c colineal con ab: cae dentro del segmento?"""
+    return (min(a[0], b[0]) <= c[0] <= max(a[0], b[0]) and
+            min(a[1], b[1]) <= c[1] <= max(a[1], b[1]))
+
+
+def _segments_cross(p1, p2, p3, p4):
+    o1, o2 = _orient(p1, p2, p3), _orient(p1, p2, p4)
+    o3, o4 = _orient(p3, p4, p1), _orient(p3, p4, p2)
+    if o1 != o2 and o3 != o4:
+        return True
+    if o1 == 0 and _on_segment(p1, p2, p3):
+        return True
+    if o2 == 0 and _on_segment(p1, p2, p4):
+        return True
+    if o3 == 0 and _on_segment(p3, p4, p1):
+        return True
+    if o4 == 0 and _on_segment(p3, p4, p2):
+        return True
+    return False
+
+
+def find_crossing(points):
+    """Devuelve (i, j) del primer par de lados que se cruzan, o None.
+
+    Un poligono cuyos lados se cruzan es señal de que los puntos no vienen en
+    orden de recorrido: el area y el dibujo saldrian mal.
+    """
+    xy = [(lo, la) for la, lo in points]
+    n = len(xy)
+    for i in range(n):
+        a1, a2 = xy[i], xy[(i + 1) % n]
+        for j in range(i + 1, n):
+            if j == i or (j + 1) % n == i or (i + 1) % n == j:
+                continue
+            b1, b2 = xy[j], xy[(j + 1) % n]
+            if _segments_cross(a1, a2, b1, b2):
+                return (i + 1, j + 1)
+    return None
+
+
+def _local_meters(points):
+    """Proyecta a metros planos alrededor del centro del conjunto.
+
+    A escala de un territorio la distorsion es despreciable, y trabajar en
+    metros evita que la longitud "pese" distinto que la latitud al medir.
+    """
+    lat0 = sum(p[0] for p in points) / len(points)
+    lon0 = sum(p[1] for p in points) / len(points)
+    k = math.cos(math.radians(lat0))
+    return [((lo - lon0) * 111320.0 * k, (la - lat0) * 110540.0) for la, lo in points]
+
+
+def _distances(xy):
+    n = len(xy)
+    return [[math.hypot(xy[i][0] - xy[j][0], xy[i][1] - xy[j][1]) for j in range(n)]
+            for i in range(n)]
+
+
+def _tour_length(order, dist):
+    return sum(dist[order[i]][order[(i + 1) % len(order)]] for i in range(len(order)))
+
+
+def _held_karp(dist):
+    """Circuito mas corto exacto por programacion dinamica. O(n^2 * 2^n)."""
+    n = len(dist)
+    full = 1 << (n - 1)                      # el nodo 0 queda fijo como inicio
+    INF = float("inf")
+    best = [[INF] * (n - 1) for _ in range(full)]
+    prev = [[-1] * (n - 1) for _ in range(full)]
+    for j in range(n - 1):
+        best[1 << j][j] = dist[0][j + 1]
+    for mask in range(full):
+        row = best[mask]
+        for j in range(n - 1):
+            cur = row[j]
+            if cur == INF or not (mask >> j) & 1:
+                continue
+            for k in range(n - 1):
+                if (mask >> k) & 1:
+                    continue
+                nm = mask | (1 << k)
+                cand = cur + dist[j + 1][k + 1]
+                if cand < best[nm][k]:
+                    best[nm][k] = cand
+                    prev[nm][k] = j
+    last, total = -1, INF
+    for j in range(n - 1):
+        cand = best[full - 1][j] + dist[j + 1][0]
+        if cand < total:
+            total, last = cand, j
+    order, mask = [], full - 1
+    while last != -1:
+        order.append(last + 1)
+        nxt = prev[mask][last]
+        mask ^= (1 << last)
+        last = nxt
+    order.reverse()
+    return [0] + order
+
+
+def _two_opt(order, dist):
+    """Descruza el recorrido hasta que ningun intercambio lo acorte.
+
+    En distancias euclidianas, un optimo local de 2-opt no tiene cruces: si dos
+    tramos se cruzaran, intercambiarlos acortaria el recorrido. Por eso al
+    terminar el poligono es simple.
+    """
+    n = len(order)
+    mejorado = True
+    while mejorado:
+        mejorado = False
+        for i in range(n - 1):
+            a, b = order[i], order[(i + 1) % n]
+            for j in range(i + 2, n):
+                if i == 0 and j == n - 1:
+                    continue
+                c, d = order[j], order[(j + 1) % n]
+                delta = (dist[a][c] + dist[b][d]) - (dist[a][b] + dist[c][d])
+                if delta < -1e-9:
+                    order[i + 1:j + 1] = reversed(order[i + 1:j + 1])
+                    mejorado = True
+                    a, b = order[i], order[(i + 1) % n]
+    return order
+
+
+def _nearest_neighbor(dist, inicio):
+    n = len(dist)
+    visto = [False] * n
+    order = [inicio]
+    visto[inicio] = True
+    for _ in range(n - 1):
+        u = order[-1]
+        mejor, md = -1, float("inf")
+        for v in range(n):
+            if not visto[v] and dist[u][v] < md:
+                mejor, md = v, dist[u][v]
+        order.append(mejor)
+        visto[mejor] = True
+    return order
+
+
+def order_by_shortest_tour(points):
+    """Reordena los puntos como el circuito cerrado mas corto que los recorre.
+
+    El recorrido mas corto que pasa por todos los puntos es, por desigualdad
+    triangular, un poligono que no se cruza: el de menor perimetro posible
+    sobre ese conjunto. Para un territorio real ese es el perimetro que se
+    quiso capturar.
+
+    Hasta 12 puntos se resuelve exacto (Held-Karp). De ahi en adelante se usa
+    vecino mas cercano desde cada arranque mas 2-opt, que en estos tamanos
+    llega al optimo o a un pelo de el, y que de todos modos garantiza que no
+    queden cruces.
+    """
+    n = len(points)
+    if n < 4:
+        return list(points)
+    dist = _distances(_local_meters(points))
+
+    if n <= 12:
+        order = _held_karp(dist)
+    else:
+        arranques = range(n) if n <= 60 else range(0, n, max(1, n // 60))
+        order, mejor = None, float("inf")
+        for ini in arranques:
+            cand = _two_opt(_nearest_neighbor(dist, ini), dist)
+            largo = _tour_length(cand, dist)
+            if largo < mejor:
+                order, mejor = cand, largo
+    order = _two_opt(order, dist)
+    return [points[i] for i in order]
+
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
+def base_dir():
+    """Carpeta donde vive el programa.
+
+    Compilado con PyInstaller en modo --onefile, `sys.executable` es el .exe
+    real; `__file__` apuntaria a la carpeta temporal donde se descomprime, que
+    desaparece al terminar. Por eso se distingue un caso del otro.
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
 def resolve_output(output, input_path):
     base = os.path.splitext(os.path.basename(input_path))[0]
+    if not output:
+        # Sin --output: junto al ejecutable.
+        return os.path.join(base_dir(), base + "_area.png")
     if output.lower().endswith((".png", ".jpg", ".jpeg")):
         parent = os.path.dirname(os.path.abspath(output))
         if parent and not os.path.isdir(parent):
@@ -371,8 +567,9 @@ def main(argv=None):
     )
     parser.add_argument("-i", "--input", required=True, metavar="RUTA",
                         help="JSON con la lista de coordenadas {lat, lng}")
-    parser.add_argument("-o", "--output", required=True, metavar="RUTA",
-                        help="archivo .png de salida, o carpeta donde guardarlo")
+    parser.add_argument("-o", "--output", metavar="RUTA", default=None,
+                        help="archivo .png de salida, o carpeta donde guardarlo. "
+                             "Si no lo pones, la imagen se guarda junto al ejecutable")
     parser.add_argument("--ancho", type=int, default=1280, help="ancho en pixeles (default 1280)")
     parser.add_argument("--alto", type=int, default=1024, help="alto en pixeles (default 1024)")
     parser.add_argument("--margen", type=float, default=8.0,
@@ -386,6 +583,9 @@ def main(argv=None):
                         help="no dibuja el pin en cada vertice")
     parser.add_argument("--pin", type=int, default=34,
                         help="alto del pin en px (default 34)")
+    parser.add_argument("--sin-ordenar", dest="sin_ordenar", action="store_true",
+                        help="no corrige el orden de los puntos aunque el poligono "
+                             "se cruce; respeta el orden del JSON tal cual")
     parser.add_argument("--silencioso", action="store_true", help="no imprime el avance")
     parser.add_argument("--version", action="version", version="Territory_Mapping " + VERSION)
     args = parser.parse_args(argv)
@@ -407,6 +607,25 @@ def main(argv=None):
         print("Territory_Mapping %s" % VERSION)
         print("  entrada : %s (%d puntos)" % (args.input, len(points)))
 
+    cruce = find_crossing(points)
+    if cruce and not args.sin_ordenar:
+        antes = perimeter_meters(points)
+        points = order_by_shortest_tour(points)
+        cruce = find_crossing(points)
+        if verbose:
+            print("  orden   : corregido, circuito mas corto (%.0f m vs %.0f m)"
+                  % (perimeter_meters(points), antes))
+
+    if cruce:
+        sys.stderr.write(
+            "\n"
+            "  AVISO: los lados %d y %d del poligono se cruzan.\n"
+            "         Los puntos no estan en orden de recorrido del perimetro,\n"
+            "         asi que el area y el dibujo van a salir mal.\n"
+            "         Quita --sin-ordenar para que el programa lo corrija solo.\n"
+            "\n" % cruce
+        )
+
     canvas, to_canvas, zoom = build_basemap(points, args.ancho, args.alto, args.margen, verbose)
     draw_polygon(canvas, points, to_canvas, args.color, args.grosor,
                  args.opacidad, not args.sin_pines, args.pin)
@@ -415,7 +634,21 @@ def main(argv=None):
     per = perimeter_meters(points)
     stamp_attribution(canvas, "%.2f ha  |  perimetro %.0f m" % (ha, per))
 
-    canvas.convert("RGB").save(destino, quality=95)
+    try:
+        canvas.convert("RGB").save(destino, quality=95)
+    except (OSError, IOError) as exc:
+        if args.output:
+            raise SystemExit("ERROR: no se pudo escribir %s\n       %s" % (destino, exc))
+        # Sin --output se intento junto al ejecutable; si esa carpeta es de
+        # solo lectura (Program Files, una unidad de red), cae a la actual.
+        alterno = os.path.join(os.getcwd(), os.path.basename(destino))
+        sys.stderr.write(
+            "\n  AVISO: no se pudo escribir junto al ejecutable.\n"
+            "         %s\n"
+            "         La imagen se guarda en la carpeta actual.\n\n" % exc
+        )
+        canvas.convert("RGB").save(alterno, quality=95)
+        destino = alterno
 
     if verbose:
         print("  area    : %.2f ha" % ha)
