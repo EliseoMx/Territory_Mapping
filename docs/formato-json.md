@@ -22,6 +22,7 @@ orden en que se recorre el perimetro del territorio.
 | Orden | El del arreglo. Define el trazo del perimetro. |
 | Cierre | Implicito: el ultimo punto se une al primero. No repetir el primero al final. |
 | Sentido | Indistinto (horario o antihorario). |
+| Desorden | Si los lados se cruzan, el programa reordena solo por circuito mas corto. |
 | Rangos | `lat` entre -90 y 90; `lng` entre -180 y 180. |
 
 Se aceptan tambien `lon` y `lng` como nombre de la longitud.
@@ -39,13 +40,13 @@ Como el JSON solo lleva coordenadas, la configuracion viaja en los parametros de
 ejecutable, con defaults razonables:
 
 ```
-Territory_Mapping.exe --input <ruta_json> --output <carpeta_salida> [opciones]
+Territory_Mapping.exe --input <ruta_json> [--output <carpeta_salida>] [opciones]
 ```
 
 | Parametro | Default | Descripcion |
 |---|---|---|
 | `-i`, `--input` | (requerido) | Ruta del JSON de coordenadas. |
-| `-o`, `--output` | (requerido) | Archivo `.png` de salida, o carpeta donde guardarlo. |
+| `-o`, `--output` | junto al ejecutable | Archivo `.png` de salida, o carpeta. Si se omite, la imagen queda junto al `.exe`. |
 | `--ancho` / `--alto` | `1280` / `1024` | Tamano de la imagen en pixeles. |
 | `--margen` | `8` | Porcentaje de aire alrededor del poligono. |
 | `--color` | `E94235` | Color del contorno en RRGGBB. Es el rojo del pin. |
@@ -53,6 +54,7 @@ Territory_Mapping.exe --input <ruta_json> --output <carpeta_salida> [opciones]
 | `--opacidad` | `8` | Opacidad del relleno, 0 a 100. Con `0` no rellena. |
 | `--pin` | `34` | Alto del pin en pixeles. |
 | `--sin-pines` | off | No dibuja el pin en cada vertice. |
+| `--sin-ordenar` | off | Respeta el orden del JSON tal cual, aunque el poligono se cruce. Por defecto el programa lo corrige solo. |
 | `--silencioso` | off | No imprime el avance. |
 
 ## Paleta
