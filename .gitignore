@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Entorno / secretos
+.env
+*.key
+config.local.json
+
+# Salidas generadas
+output/
+salidas/
+*.log
+
+# Editores / SO
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
