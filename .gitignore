@@ -18,6 +18,7 @@ config.local.json
 
 # Salidas generadas
 output/
+salida/
 salidas/
 *.log
 

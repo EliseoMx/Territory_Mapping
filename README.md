@@ -13,3 +13,4 @@ Territory_Mapping.exe --input <ruta_del_json> --output <carpeta_o_archivo_de_sal
 ## Estado
 
 En desarrollo. Ver `docs/` para la especificación.
+
