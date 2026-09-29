@@ -79,6 +79,54 @@ JSON de coordenadas
            8. index.html con el mapa y la galeria
 ```
 
+## Calculo del area
+
+Tres pasos.
+
+**1. De grados a metros.** Las coordenadas llegan en grados, que no son una
+unidad de longitud: un grado de longitud mide ~111 km en el ecuador y cero en
+el polo. Se proyecta a un plano local (equirectangular) centrado en el
+territorio, multiplicando cada coordenada por los metros que mide un grado a
+esa latitud.
+
+**2. Formula del cordon de zapato (Gauss).** Con el poligono ya en metros:
+
+```
+area = |  SUM ( x_i * y_j  -  x_j * y_i )  | / 2      con j = i+1, cerrando al inicio
+```
+
+Suma los productos cruzados de vertices consecutivos. El valor con signo indica
+el sentido del recorrido (positivo antihorario, negativo horario); el valor
+absoluto lo vuelve indiferente, que es por lo que el JSON acepta cualquiera de
+los dos sentidos.
+
+**3. A hectareas.** Dividir entre 10 000.
+
+### Por que un poligono cruzado da un area equivocada
+
+La formula suma areas con signo. En un moño, los dos lobulos se recorren en
+sentidos opuestos, sus signos se cancelan y el total encoge o llega a cero. Por
+eso el programa detecta los cruces antes de calcular: no es un capricho de
+dibujo, es que el numero seria mentira.
+
+### Precision
+
+Los metros por grado salen de las series estandar sobre WGS84, no de una
+constante fija:
+
+```
+m_lat = 111132.92 - 559.82*cos(2f) + 1.175*cos(4f) - 0.0023*cos(6f)
+m_lon = 111412.84*cos(f) -  93.5*cos(3f) + 0.118*cos(5f)
+```
+
+Contrastado contra el area geodesica real sobre WGS84 (pyproj), el error queda
+en **0.0000%** para territorios de barrio y sube apenas a 0.0005% en una caja
+de 100 km de lado. Se verifico de 0 a 65 grados de latitud, norte y sur.
+
+Usar constantes fijas (111320 y 110540, que es lo que se ve en la mayoria de
+los ejemplos de internet) subestimaba el area **0.2% en Guadalajara y 1.1% a 65
+grados de latitud**. Sobre un territorio de 16 ha eso son ~310 m2 de menos.
+
 ## Atribucion obligatoria
 
 Ambas fuentes piden credito, y el programa lo estampa en la imagen y en el

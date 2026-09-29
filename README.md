@@ -6,7 +6,7 @@ mapa de la zona, pinta el poligono encima y marca cada vertice con un pin.
 ![Ejemplo de salida](docs/ejemplo.png)
 
 > Territorio de ejemplo en Zapopan, Jalisco, delimitado por Av. Moctezuma,
-> Av. Nicolas Copernico, Av. El Colli y C. Paseo de los Volcanes. 15.67 ha.
+> Av. Nicolas Copernico, Av. El Colli y C. Paseo de los Volcanes. 15.70 ha.
 
 ---
 
@@ -106,11 +106,11 @@ Se corrige solo. No tienes que hacer nada.
 
 El orden del arreglo **es** el trazo del perimetro, asi que unos puntos
 revueltos producirian un poligono cruzado y un area equivocada: con el
-territorio de ejemplo en desorden, daba 0.99 ha en vez de 15.67 ha. El programa
+territorio de ejemplo en desorden, daba 0.99 ha en vez de 15.70 ha. El programa
 detecta los cruces y reordena antes de dibujar:
 
 ```
-  orden   : corregido, circuito mas corto (1587 m vs 1899 m)
+  orden   : corregido, circuito mas corto (1589 m vs 1901 m)
 ```
 
 ![Formas de territorio](docs/formas.png)
@@ -155,8 +155,8 @@ dist\Territory_Mapping.exe -i samples\formas\forma_l_revuelto.json -o salida
 
 **El limite** se ve en la ultima columna de la figura. Cuando el territorio
 tiene una muesca angosta y profunda, el poligono mas corto no es el que tenias
-en mente: la U de 19.36 ha se resolvio como una figura de 14.75 ha con 2121 m
-de perimetro, contra los 2480 m del original. No se cruza y de verdad es mas
+en mente: la U de 19.40 ha se resolvio como una figura de 14.78 ha con 2123 m
+de perimetro, contra los 2483 m del original. No se cruza y de verdad es mas
 corta; simplemente **no es tu territorio**.
 
 No es un bug del algoritmo: es que la informacion del orden se perdio y el
@@ -170,6 +170,61 @@ cual y solo avisa si detecta cruces.
 En Google Maps, clic derecho sobre el punto y la primera linea del menu son las
 coordenadas: se copian al portapapeles con un clic. Repite en cada esquina del
 territorio y pegalas en el JSON.
+
+---
+
+## Liga web en Google My Maps
+
+Ademas de la imagen, el programa puede dejar el territorio publicado en
+**Google My Maps** y darte la liga, igual a la que harias a mano:
+
+```
+dist\Territory_Mapping.exe -i mi_territorio.json --mymaps --sin-imagen
+```
+
+**Sin cuenta:** arrastra el JSON sobre `generar_liga.bat`. Genera la liga
+instantanea de geojson.io (sin Google, sin registro) y la abre en tu navegador.
+
+Con `--mymaps` se publica en My Maps, que **si** requiere cuenta de Google. Las ligas quedan
+en `salida\<nombre>_liga.txt` y tambien se imprimen en pantalla:
+
+```
+  LIGA MY MAPS: https://www.google.com/maps/d/viewer?mid=1AbC...
+  LIGA INSTANTANEA: https://geojson.io/#data=...
+```
+
+### Que hace por dentro
+
+Google My Maps no tiene API publica, asi que el programa maneja el navegador
+como lo haria una persona:
+
+1. Abre Chrome (o Edge si no hay Chrome) con un **perfil propio del programa**,
+   guardado en `%LOCALAPPDATA%\Territory_Mapping\chrome-perfil`.
+2. Crea un mapa nuevo, importa el KML, le pone nombre y activa
+   *cualquiera con el vinculo puede verlo*.
+3. Te devuelve la liga de visor (`/maps/d/viewer?mid=...`).
+
+**La primera vez** te pide iniciar sesion con tu cuenta de Google en esa
+ventana de Chrome. Tienes 5 minutos. El perfil la recuerda y las siguientes
+corridas ya no la piden. Se hace asi, con Chrome normal y conexion posterior
+por el puerto de depuracion (9333), porque Google bloquea el inicio de sesion
+en navegadores lanzados por herramientas de automatizacion.
+
+### Si algo falla
+
+Si Google cambia la pantalla de My Maps o no hay sesion, el programa **no se
+queda sin nada**: siempre deja
+
+- `<nombre>.kml`, para importarlo a mano (mymaps.google.com, Crear mapa,
+  Importar), y
+- una **liga instantanea** de geojson.io con el territorio dentro de la propia
+  URL: se abre en cualquier navegador, con vista satelital, sin cuenta.
+
+En ese caso sale con codigo 3 y guarda `mymaps_error.png` con la pantalla del
+momento del fallo, para ver en que paso se atoro.
+
+Con `--kml` (sin `--mymaps`) genera solo el KML y la liga instantanea, sin
+tocar Google.
 
 ---
 
@@ -191,6 +246,11 @@ Territory_Mapping.exe -i <json> [-o <salida>] [opciones]
 | `--pin` | `34` | Alto del pin en pixeles |
 | `--sin-pines` | apagado | No dibuja los marcadores |
 | `--sin-ordenar` | apagado | No corrige el orden aunque el poligono se cruce |
+| `--mymaps` | apagado | Publica en Google My Maps y da la liga. Incluye `--kml` |
+| `--kml` | apagado | Genera `<nombre>.kml` y la liga instantanea de geojson.io |
+| `--sin-imagen` | apagado | No genera el `.png` (no descarga teselas) |
+| `--nombre` | nombre del JSON | Titulo del mapa en My Maps y en el KML |
+| `--privado` | apagado | Con `--mymaps`, no lo hace visible para quien tenga la liga |
 | `--silencioso` | apagado | No imprime el avance |
 
 **Si omites `-o`, la imagen queda junto al ejecutable**, con el nombre
@@ -199,6 +259,14 @@ Si esa carpeta fuera de solo lectura, avisa y la guarda en la carpeta actual.
 
 Si `-o` termina en `.png`, `.jpg` o `.jpeg`, ese es el archivo. Si no, se trata
 como carpeta y el archivo se llama `<nombre_del_json>_area.png`.
+
+**Si el archivo ya existe se sobrescribe**, sin preguntar y sin crear copias
+numeradas. Asi puedes corregir el JSON y volver a correr las veces que haga
+falta sin ir limpiando. Cuando reemplaza un archivo lo dice:
+
+```
+  salida  : D:\GitHub\Territory_Mapping\territorio_area.png  (reemplazado)
+```
 
 ### Ejemplos
 
@@ -239,12 +307,15 @@ siendo legibles por debajo.
 
 ```
 Territory_Mapping/
-├── src/territory_mapping.py    codigo fuente (una sola dependencia: Pillow)
+├── src/territory_mapping.py    codigo fuente: imagen del area (Pillow)
+├── src/salidas_web.py          KML y liga instantanea
+├── src/mymaps.py               publicacion en Google My Maps (Playwright)
 ├── samples/                    JSON de ejemplo
 │   └── formas/                 los cinco casos de ordenamiento
 ├── docs/                       formato, arquitectura, diagrama
 ├── build.bat                   genera dist\Territory_Mapping.exe
 ├── probar.bat                  corre el ejemplo y abre el resultado
+├── generar_liga.bat            arrastra un JSON y te da la liga de My Maps
 └── requirements.txt
 ```
 
@@ -259,13 +330,15 @@ Territory_Mapping/
 | `ERROR: se necesitan al menos 3 puntos` | El JSON tiene 2 puntos o menos, o no es un arreglo |
 | `ERROR: el punto N tiene lat fuera de rango` | Invertiste `lat` y `lng`. En Mexico la latitud ronda 20 y la longitud -103 |
 | El poligono sale deformado o en forma de mono | Solo pasa con `--sin-ordenar`. Quitalo y se corrige solo |
+| Quiero conservar la version anterior | Se sobrescribe siempre. Usa `-o` con un nombre distinto en cada corrida |
 | Reordeno pero el resultado no es mi territorio | Tiene una muesca angosta y profunda. Captura los puntos en orden de recorrido |
 
 ---
 
 ## Estado
 
-Funcionando: imagen del area a partir del JSON.
+Funcionando: imagen del area a partir del JSON, KML, liga instantanea y
+publicacion en Google My Maps.
 
 Pendiente del alcance original: la captura a nivel de calle de cada punto. Ver
 [`docs/arquitectura.md`](docs/arquitectura.md) para la fuente elegida y por que.

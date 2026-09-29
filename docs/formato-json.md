@@ -46,7 +46,7 @@ Territory_Mapping.exe --input <ruta_json> [--output <carpeta_salida>] [opciones]
 | Parametro | Default | Descripcion |
 |---|---|---|
 | `-i`, `--input` | (requerido) | Ruta del JSON de coordenadas. |
-| `-o`, `--output` | junto al ejecutable | Archivo `.png` de salida, o carpeta. Si se omite, la imagen queda junto al `.exe`. |
+| `-o`, `--output` | junto al ejecutable | Archivo `.png` de salida, o carpeta. Si se omite, la imagen queda junto al `.exe`. Si el archivo ya existe, se sobrescribe. |
 | `--ancho` / `--alto` | `1280` / `1024` | Tamano de la imagen en pixeles. |
 | `--margen` | `8` | Porcentaje de aire alrededor del poligono. |
 | `--color` | `E94235` | Color del contorno en RRGGBB. Es el rojo del pin. |
