@@ -7,7 +7,9 @@ cubierta: el mapa de la zona con el poligono dibujado encima.
 
 Uso:
     Territory_Mapping.exe --input coords.json --output salida\\
-    Territory_Mapping.exe -i coords.json -o mapa.png --relleno --ancho 1600
+    Territory_Mapping.exe -i coords.json -o mapa.png --ancho 1600
+    Territory_Mapping.exe -i coords.json --mymaps           (liga de Google My Maps)
+    Territory_Mapping.exe -i coords.json --kml --sin-imagen (KML + liga instantanea)
 
 Fuente del mapa: teselas de OpenStreetMap (sin API key, sin cuenta).
 """
@@ -31,7 +33,7 @@ except ImportError:
     )
     sys.exit(2)
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 TILE_SIZE = 256
 MAX_ZOOM = 19
 MIN_ZOOM = 2
@@ -323,12 +325,32 @@ def stamp_attribution(canvas, extra=""):
 # Geometria de apoyo
 # --------------------------------------------------------------------------
 
+def metros_por_grado(lat):
+    """Cuantos metros mide un grado de latitud y uno de longitud, en `lat`.
+
+    La Tierra no es una esfera: un grado de latitud mide ~110574 m en el ecuador
+    y ~111694 m en el polo, y uno de longitud se acorta con el coseno. Estas son
+    las series estandar sobre WGS84; dan precision de centimetros, y evitan el
+    sesgo de usar una constante fija (que subestimaba el area 0.2% en Guadalajara
+    y 1.1% a 65 grados de latitud).
+    """
+    f = math.radians(lat)
+    m_lat = (111132.92
+             - 559.82 * math.cos(2 * f)
+             + 1.175 * math.cos(4 * f)
+             - 0.0023 * math.cos(6 * f))
+    m_lon = (111412.84 * math.cos(f)
+             - 93.5 * math.cos(3 * f)
+             + 0.118 * math.cos(5 * f))
+    return m_lat, m_lon
+
+
 def area_hectares(points):
     """Area aproximada por proyeccion equirectangular local."""
     lat0 = sum(p[0] for p in points) / len(points)
-    k = math.cos(math.radians(lat0))
-    xs = [(lo * 111320.0 * k) for _, lo in points]
-    ys = [(la * 110540.0) for la, _ in points]
+    m_lat, m_lon = metros_por_grado(lat0)
+    xs = [(lo * m_lon) for _, lo in points]
+    ys = [(la * m_lat) for la, _ in points]
     total = 0.0
     for i in range(len(points)):
         j = (i + 1) % len(points)
@@ -341,9 +363,9 @@ def perimeter_meters(points):
     for i in range(len(points)):
         la1, lo1 = points[i]
         la2, lo2 = points[(i + 1) % len(points)]
-        k = math.cos(math.radians((la1 + la2) / 2.0))
-        dx = (lo2 - lo1) * 111320.0 * k
-        dy = (la2 - la1) * 110540.0
+        m_lat, m_lon = metros_por_grado((la1 + la2) / 2.0)
+        dx = (lo2 - lo1) * m_lon
+        dy = (la2 - la1) * m_lat
         total += math.hypot(dx, dy)
     return total
 
@@ -404,8 +426,8 @@ def _local_meters(points):
     """
     lat0 = sum(p[0] for p in points) / len(points)
     lon0 = sum(p[1] for p in points) / len(points)
-    k = math.cos(math.radians(lat0))
-    return [((lo - lon0) * 111320.0 * k, (la - lat0) * 110540.0) for la, lo in points]
+    m_lat, m_lon = metros_por_grado(lat0)
+    return [((lo - lon0) * m_lon, (la - lat0) * m_lat) for la, lo in points]
 
 
 def _distances(xy):
@@ -586,6 +608,19 @@ def main(argv=None):
     parser.add_argument("--sin-ordenar", dest="sin_ordenar", action="store_true",
                         help="no corrige el orden de los puntos aunque el poligono "
                              "se cruce; respeta el orden del JSON tal cual")
+    parser.add_argument("--mymaps", action="store_true",
+                        help="crea el mapa en Google My Maps y devuelve la liga "
+                             "(incluye --kml)")
+    parser.add_argument("--kml", action="store_true",
+                        help="genera el .kml y una liga instantanea de geojson.io")
+    parser.add_argument("--abrir", action="store_true",
+                        help="abre la liga en el navegador al terminar")
+    parser.add_argument("--sin-imagen", dest="sin_imagen", action="store_true",
+                        help="no genera el .png (util con --mymaps o --kml)")
+    parser.add_argument("--nombre", default=None,
+                        help="nombre del mapa (default: el nombre del JSON)")
+    parser.add_argument("--privado", action="store_true",
+                        help="con --mymaps, no activa 'cualquiera con el vinculo puede verlo'")
     parser.add_argument("--silencioso", action="store_true", help="no imprime el avance")
     parser.add_argument("--version", action="version", version="Territory_Mapping " + VERSION)
     args = parser.parse_args(argv)
@@ -626,14 +661,26 @@ def main(argv=None):
             "\n" % cruce
         )
 
+    ha = area_hectares(points)
+    per = perimeter_meters(points)
+    if not args.sin_imagen:
+        destino = write_image(points, args, destino, ha, per, verbose)
+    if verbose:
+        print("  area    : %.2f ha" % ha)
+        print("  perim.  : %.0f m" % per)
+
+    if args.kml or args.mymaps:
+        return web_outputs(points, args, destino, ha, per, verbose)
+    return 0
+
+
+def write_image(points, args, destino, ha, per, verbose):
     canvas, to_canvas, zoom = build_basemap(points, args.ancho, args.alto, args.margen, verbose)
     draw_polygon(canvas, points, to_canvas, args.color, args.grosor,
                  args.opacidad, not args.sin_pines, args.pin)
-
-    ha = area_hectares(points)
-    per = perimeter_meters(points)
     stamp_attribution(canvas, "%.2f ha  |  perimetro %.0f m" % (ha, per))
 
+    reemplazo = os.path.isfile(destino)
     try:
         canvas.convert("RGB").save(destino, quality=95)
     except (OSError, IOError) as exc:
@@ -647,14 +694,77 @@ def main(argv=None):
             "         %s\n"
             "         La imagen se guarda en la carpeta actual.\n\n" % exc
         )
+        reemplazo = os.path.isfile(alterno)
         canvas.convert("RGB").save(alterno, quality=95)
         destino = alterno
 
     if verbose:
-        print("  area    : %.2f ha" % ha)
-        print("  perim.  : %.0f m" % per)
-        print("  salida  : %s" % os.path.abspath(destino))
-    return 0
+        print("  salida  : %s%s" % (os.path.abspath(destino),
+                                    "  (reemplazado)" if reemplazo else ""))
+    return destino
+
+
+def _write_text(path, text):
+    """Escribe junto a la salida; si esa carpeta no deja, en la actual."""
+    try:
+        with io.open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return path
+    except (OSError, IOError):
+        alterno = os.path.join(os.getcwd(), os.path.basename(path))
+        with io.open(alterno, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return alterno
+
+
+def web_outputs(points, args, destino, ha, per, verbose):
+    """KML, liga instantanea y, con --mymaps, la liga de Google My Maps."""
+    import salidas_web
+
+    base = os.path.splitext(os.path.basename(args.input))[0]
+    carpeta = os.path.dirname(os.path.abspath(destino))
+    nombre = args.nombre or base
+    rgb = "%02X%02X%02X" % hex_to_rgb(args.color)
+
+    kml_path = _write_text(os.path.join(carpeta, base + ".kml"),
+                           salidas_web.to_kml(points, nombre, ha, per, rgb, args.opacidad))
+    instant = salidas_web.instant_link(points, nombre, ha, per, rgb, args.opacidad)
+    lineas = ["Territorio: %s" % nombre, salidas_web.descripcion(ha, per), "",
+              "Liga instantanea (geojson.io):", instant, ""]
+    if verbose:
+        print("  kml     : %s" % kml_path)
+
+    codigo = 0
+    if args.mymaps:
+        import mymaps
+        log = print if verbose else (lambda *_: None)
+        try:
+            res = mymaps.publish(kml_path, nombre, publico=not args.privado,
+                                 log=log, debug_dir=carpeta)
+            lineas[0:0] = ["Google My Maps:", res["viewer"],
+                           "Editar: " + res["edit"],
+                           "Publico: " + ("si" if res["publico"] else "no"), ""]
+            for a in res["avisos"]:
+                sys.stderr.write("  AVISO: %s\n" % a)
+            print("")
+            print("  LIGA MY MAPS: %s" % res["viewer"])
+            if not res["publico"]:
+                print("  (por ahora solo tu la puedes ver)")
+        except mymaps.MyMapsError as exc:
+            codigo = 3
+            sys.stderr.write(
+                "\n  AVISO: no se pudo crear el mapa en My Maps: %s\n"
+                "         Te dejo la liga instantanea y el KML para importarlo a mano\n"
+                "         (mymaps.google.com > Crear mapa > Importar).\n\n" % exc)
+
+    txt = _write_text(os.path.join(carpeta, base + "_liga.txt"), "\n".join(lineas))
+    if args.abrir:
+        import webbrowser
+        webbrowser.open(instant)
+    print("  LIGA INSTANTANEA: %s" % instant)
+    if verbose:
+        print("  ligas   : %s" % txt)
+    return codigo
 
 
 if __name__ == "__main__":

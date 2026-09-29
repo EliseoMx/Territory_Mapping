@@ -49,6 +49,8 @@ pyinstaller --noconfirm --onefile --console ^
     --distpath "%~dp0dist" ^
     --workpath "%~dp0build" ^
     --specpath "%~dp0build" ^
+    --paths "%~dp0src" ^
+    --collect-all playwright ^
     "src\territory_mapping.py"
 if errorlevel 1 (
     echo ERROR: fallo la compilacion.
